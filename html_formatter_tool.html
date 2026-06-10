@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>HTML自動整形ツール（リンクも貼れる！）</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 200px;
+      margin-bottom: 10px;
+      box-sizing: border-box;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<h2>HTML自動整形ツール</h2>
+
+<p>元のHTMLを貼り付けて「整形」ボタンを押してください</p>
+
+<textarea id="input" placeholder="ここにHTMLを貼り付け"></textarea>
+
+<button onclick="formatHTML()">整形する</button>
+
+<h3>整形後</h3>
+
+<textarea id="output" placeholder="ここに結果が表示されます"></textarea>
+
+<script>
+function formatHTML() {
+
+  let input = document.getElementById("input").value;
+
+  const savedLinks = [];
+
+  input = input.replace(
+    /<a\b[^>]*>[\s\S]*?<\/a>/gi,
+    function(match) {
+      const token = `___LINK_${savedLinks.length}___`;
+      savedLinks.push(match);
+      return token;
+    }
+  );
+
+  let text = input
+    .replace(/<\/??p[^>]*>/gi, "")
+    .replace(/\r\n|\r/g, "\n");
+
+  text = text.replace(/<br\s*\/?>/gi, "\n");
+
+  const lines = text.split("\n");
+
+  const result = lines.map(line => {
+
+    const trimmed = line.trim();
+
+    if (trimmed === "") {
+      return "<br>";
+    }
+
+    let formatted = trimmed;
+
+    formatted = formatted.replace(
+      /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
+      '<a href="mailto:$&">$&</a>'
+    );
+
+    formatted = formatted.replace(
+      /(https?:\/\/[^\s<>"'（）()【】\[\]{}「」『』<>]+)/gi,
+      '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+    );
+
+    return `<span>${formatted}</span><br>`;
+  });
+
+  let output = result.join("\n");
+
+  savedLinks.forEach((link, index) => {
+    output = output.replaceAll(
+      `___LINK_${index}___`,
+      link
+    );
+  });
+
+  output = output.replace(/<br>$/, "");
+
+  document.getElementById("output").value = output;
+}
+</script>
+
+</body>
+</html>
