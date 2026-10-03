@@ -27,7 +27,7 @@ textarea { resize: vertical; font: 14px/1.7 ui-monospace, monospace; } #editor {
 <body>
 <main>
 <h1>HTML自動整形ツール</h1>
-<p class="hint">文章の書式を保ちながら、各行を span と br のHTMLに整えます。</p>
+<p class="hint">文章の書式を保ちながら、書式ごとに span をまとめ、改行を br に整えます。</p>
 <section class="card">
 <h2>1. 文章を入力</h2>
 <div class="row tabs" aria-label="入力方法">
@@ -93,17 +93,29 @@ function styleOf(element) {
   }
   return result.join('; ');
 }
-function wrappersFor(element) {
-  const wrappers = [];
-  const tags = {B:'strong',STRONG:'strong',I:'em',EM:'em',U:'u',S:'s',STRIKE:'s',DEL:'s',SUB:'sub',SUP:'sup'};
-  if (tags[element.tagName]) wrappers.push([`<${tags[element.tagName]}>`, `</${tags[element.tagName]}>`]);
-  if (element.tagName === 'A') {
-    const url = safeURL(element.getAttribute('href'));
-    if (url !== null) wrappers.push([`<a href="${escapeHTML(url)}"${element.target === '_blank' ? ' target="_blank" rel="noopener noreferrer"' : ''}>`, '</a>']);
+// Carry the effective text style down the tree instead of copying nested tags.
+function formattingFor(element, inherited) {
+  const style = document.createElement('span').style;
+  style.cssText = inherited;
+  const defaults = {B:['font-weight','bold'], STRONG:['font-weight','bold'], I:['font-style','italic'], EM:['font-style','italic'], SUB:['vertical-align','sub'], SUP:['vertical-align','super']};
+  const semantic = defaults[element.tagName];
+  if (semantic) style.setProperty(...semantic);
+  const decorations = new Set((style.textDecorationLine || '').split(' ').filter(value => value && value !== 'none'));
+  if (element.tagName === 'U') decorations.add('underline');
+  if (['S','STRIKE','DEL'].includes(element.tagName)) decorations.add('line-through');
+  const own = document.createElement('span').style;
+  own.cssText = styleOf(element);
+  for (const name of own) {
+    const value = own.getPropertyValue(name);
+    if (value === 'inherit' || value === 'unset') continue;
+    style.setProperty(name, value);
   }
-  const style = styleOf(element);
-  if (style) wrappers.push([`<span style="${escapeHTML(style)}">`, '</span>']);
-  return wrappers;
+  // An ancestor's underline/strike continues through descendants.
+  for (const value of (own.textDecorationLine || '').split(' ')) {
+    if (value && value !== 'none') decorations.add(value);
+  }
+  if (decorations.size) style.textDecorationLine = [...decorations].join(' ');
+  return styleOf({style, tagName: 'SPAN'});
 }
 function linkText(text, inLink, autoLink) {
   if (inLink || !autoLink) return escapeHTML(text);
@@ -125,7 +137,7 @@ function normalizeHTML(source, autoLink) {
   const lines = [''];
   let explicitBreak = false;
   function newline(explicit) { lines.push(''); explicitBreak = explicit; }
-  function walk(node, wrappers = [], inLink = false) {
+  function walk(node, formatting = '', link = null) {
     if (node.nodeType === Node.TEXT_NODE) {
       // Ignore source-code indentation between block elements.
       if (/^\s*\n\s*$/.test(node.data) && (blockTags.has(node.previousSibling?.nodeName) || blockTags.has(node.nextSibling?.nodeName))) return;
@@ -133,7 +145,9 @@ function normalizeHTML(source, autoLink) {
       text.split('\n').forEach((part, index) => {
         if (index) newline(true);
         if (!part) return;
-        lines[lines.length - 1] += wrappers.map(w => w[0]).join('') + linkText(part, inLink, autoLink) + [...wrappers].reverse().map(w => w[1]).join('');
+        let content = linkText(part, Boolean(link), autoLink);
+        if (link) content = link[0] + content + link[1];
+        lines[lines.length - 1] += `<span${formatting ? ` style="${escapeHTML(formatting)}"` : ''}>${content}</span>`;
         explicitBreak = false;
       });
       return;
@@ -142,15 +156,19 @@ function normalizeHTML(source, autoLink) {
     if (node.tagName === 'BR') { newline(true); return; }
     const block = blockTags.has(node.tagName);
     if (block && lines[lines.length - 1]) newline(false);
-    const next = wrappers.concat(wrappersFor(node));
-    const linked = inLink || (node.tagName === 'A' && safeURL(node.getAttribute('href')) !== null);
+    const next = formattingFor(node, formatting);
+    let linked = link;
+    if (node.tagName === 'A') {
+      const url = safeURL(node.getAttribute('href'));
+      if (url !== null) linked = [`<a href="${escapeHTML(url)}"${node.target === '_blank' ? ' target="_blank" rel="noopener noreferrer"' : ''}>`, '</a>'];
+    }
     const before = lines.length;
     for (const child of node.childNodes) walk(child, next, linked);
     if (block && (lines[lines.length - 1] || lines.length === before)) newline(false);
   }
   for (const node of template.content.childNodes) walk(node);
   if (!explicitBreak && lines.length > 1 && !lines.at(-1)) lines.pop();
-  return lines.map(line => line ? `<span>${line}</span>` : '').join('<br>\n');
+  return lines.join('<br>\n');
 }
 function setStatus(message) { $('status').textContent = message; }
 function switchMode(next) {
