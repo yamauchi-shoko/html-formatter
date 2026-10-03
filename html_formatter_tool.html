@@ -1,103 +1,231 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>HTML自動整形ツール（リンクも貼れる！）</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      padding: 20px;
-    }
-
-    textarea {
-      width: 100%;
-      height: 200px;
-      margin-bottom: 10px;
-      box-sizing: border-box;
-    }
-
-    button {
-      padding: 10px 20px;
-      font-size: 16px;
-      cursor: pointer;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTML自動整形ツール</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; background: #f4f6fa; color: #243044; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.65; }
+main { max-width: 1060px; margin: 40px auto; padding: 0 20px; }
+h1 { font-size: 28px; margin-bottom: 4px; } h2 { font-size: 18px; margin-top: 0; }
+p { margin-top: 0; } .hint { color: #5d6b80; font-size: 14px; }
+.card { background: white; border: 1px solid #dbe2ec; border-radius: 12px; padding: 22px; margin: 20px 0; }
+.row, .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+button, select, input { font: inherit; border: 1px solid #bbc6d6; border-radius: 6px; background: white; padding: 7px 12px; color: inherit; }
+button { cursor: pointer; } button:hover { background: #eef2fa; } button:focus-visible, textarea:focus-visible, [contenteditable]:focus-visible { outline: 3px solid #88afff; }
+.primary { background: #255cce; color: white; border-color: #255cce; } .primary:hover { background: #194aaf; }
+.tabs { margin-bottom: 14px; } .tabs button[aria-pressed="true"] { background: #e9efff; color: #204fb0; border-color: #255cce; }
+textarea, #editor { width: 100%; min-height: 220px; padding: 14px; border: 1px solid #bbc6d6; border-radius: 6px; background: white; overflow-wrap: anywhere; }
+textarea { resize: vertical; font: 14px/1.7 ui-monospace, monospace; } #editor { font-size: 16px; white-space: pre-wrap; }
+#editor:empty:before { content: attr(data-placeholder); color: #758297; pointer-events: none; }
+.toolbar { margin-bottom: 10px; } #fontSize { width: 80px; } #preview { min-height: 100px; overflow-wrap: anywhere; white-space: pre-wrap; color: #000; }
+#status { min-height: 1.6em; margin-top: 12px; color: #31568b; } [hidden] { display: none !important; }
+@media (max-width: 600px) { main { margin: 20px auto; padding: 0 12px; } .card { padding: 16px; } h1 { font-size: 24px; } }
+</style>
 </head>
 <body>
-
-<h2>HTML自動整形ツール</h2>
-
-<p>元のHTMLを貼り付けて「整形」ボタンを押してください</p>
-
-<textarea id="input" placeholder="ここにHTMLを貼り付け"></textarea>
-
-<button onclick="formatHTML()">整形する</button>
-
-<h3>整形後</h3>
-
-<textarea id="output" placeholder="ここに結果が表示されます"></textarea>
-
+<main>
+<h1>HTML自動整形ツール</h1>
+<p class="hint">文章の書式を保ちながら、各行を span と br のHTMLに整えます。</p>
+<section class="card">
+<h2>1. 文章を入力</h2>
+<div class="row tabs" aria-label="入力方法">
+<button type="button" id="richTab" aria-pressed="true">書式付きで編集</button>
+<button type="button" id="htmlTab" aria-pressed="false">HTMLを入力</button>
+</div>
+<div id="richPanel">
+<p class="hint">文章を貼り付けて、変更する文字を選択してください。貼り付け元の文字サイズ・太字・下線も引き継ぎます。</p>
+<div class="toolbar" aria-label="文字の書式">
+<label for="fontSize">文字サイズ</label><input id="fontSize" type="number" min="8" max="96" value="16"><span>px</span>
+<button type="button" id="sizeButton">サイズを適用</button>
+<button type="button" data-command="bold"><b>太字</b></button>
+<button type="button" data-command="italic"><i>斜体</i></button>
+<button type="button" data-command="underline"><u>下線</u></button>
+<button type="button" data-command="strikeThrough"><s>取り消し線</s></button>
+<button type="button" id="linkButton">リンク</button>
+<button type="button" data-command="removeFormat">書式を解除</button>
+</div>
+<div id="editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="書式付き文章" data-placeholder="ここに文章を入力、または書式付きの文章を貼り付け"></div>
+</div>
+<div id="htmlPanel" hidden>
+<label for="input" class="hint">HTMLまたはプレーンテキストを貼り付けてください。</label>
+<textarea id="input" placeholder='例：<p style="font-size: 20px"><strong>見出し</strong></p>' spellcheck="false"></textarea>
+</div>
+<p class="hint" style="margin: 10px 0">文字色・背景色にも対応。画像・表のレイアウト・外部CSSは引き継ぎません。</p>
+<div class="row"><button type="button" class="primary" id="formatButton">整形する</button><label><input type="checkbox" id="autoLink" checked> URL・メールアドレスを自動リンク</label></div>
+<div id="status" role="status" aria-live="polite"></div>
+</section>
+<section class="card"><h2>2. 表示を確認</h2><div id="preview" aria-label="整形後のプレビュー"></div></section>
+<section class="card"><div class="row" style="justify-content: space-between; margin-bottom: 12px"><h2 style="margin: 0">3. HTMLをコピー</h2><button type="button" id="copyButton">HTMLをコピー</button></div><textarea id="output" readonly aria-label="整形後のHTML" placeholder="整形結果が表示されます" spellcheck="false"></textarea></section>
+</main>
 <script>
-function formatHTML() {
-
-  let input = document.getElementById("input").value;
-
-  const savedLinks = [];
-
-  input = input.replace(
-    /<a\b[^>]*>[\s\S]*?<\/a>/gi,
-    function(match) {
-      const token = `___LINK_${savedLinks.length}___`;
-      savedLinks.push(match);
-      return token;
-    }
-  );
-
-  let text = input
-    .replace(/<\/??p[^>]*>/gi, "")
-    .replace(/\r\n|\r/g, "\n");
-
-  text = text.replace(/<br\s*\/?>/gi, "\n");
-
-  const lines = text.split("\n");
-
-  const result = lines.map(line => {
-
-    const trimmed = line.trim();
-
-    if (trimmed === "") {
-      return "<br>";
-    }
-
-    let formatted = trimmed;
-
-    formatted = formatted.replace(
-      /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
-      '<a href="mailto:$&">$&</a>'
-    );
-
-    formatted = formatted.replace(
-      /(https?:\/\/[^\s<>"'（）()【】\[\]{}「」『』<>]+)/gi,
-      '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-    );
-
-    return `<span>${formatted}</span><br>`;
-  });
-
-  let output = result.join("\n");
-
-  savedLinks.forEach((link, index) => {
-    output = output.replaceAll(
-      `___LINK_${index}___`,
-      link
-    );
-  });
-
-  output = output.replace(/<br>$/, "");
-
-  document.getElementById("output").value = output;
+'use strict';
+const $ = id => document.getElementById(id);
+let mode = 'rich';
+let savedRange = null;
+const blockTags = new Set(['P','DIV','SECTION','ARTICLE','HEADER','FOOTER','H1','H2','H3','H4','H5','H6','LI','UL','OL','BLOCKQUOTE','PRE','TR','TABLE']);
+const ignoredTags = new Set(['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','SVG','MATH','LINK','META','TEMPLATE','NOSCRIPT']);
+function escapeHTML(text) { return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function safeURL(value) {
+  const url = (value || '').trim();
+  if (!url || /[\u0000-\u0020\u007f]/.test(url)) return null;
+  if (/^(https?:|mailto:|tel:)/i.test(url) || /^(#|\/|\.\/|\.\.\/)/.test(url)) return url;
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
+  return null;
 }
+function styleOf(element) {
+  const style = element.style;
+  const result = [];
+  for (const name of ['font-size','font-weight','font-style','text-decoration-line','color','background-color','font-family','vertical-align']) {
+    const value = style.getPropertyValue(name);
+    if (value && !/url\(|var\(|expression|[<>]/i.test(value)) result.push(`${name}: ${value}`);
+  }
+  if (style.textDecoration && !style.textDecorationLine) {
+    const lines = style.textDecoration.match(/underline|line-through|overline/g);
+    if (lines) result.push(`text-decoration-line: ${lines.join(' ')}`);
+  }
+  if (element.tagName === 'FONT') {
+    const sizes = {1:'10px',2:'13px',3:'16px',4:'18px',5:'24px',6:'32px',7:'48px'};
+    if (sizes[element.getAttribute('size')]) result.push(`font-size: ${sizes[element.getAttribute('size')]}`);
+    const color = document.createElement('span'); color.style.color = element.getAttribute('color') || '';
+    if (color.style.color) result.push(`color: ${color.style.color}`);
+  }
+  return result.join('; ');
+}
+function wrappersFor(element) {
+  const wrappers = [];
+  const tags = {B:'strong',STRONG:'strong',I:'em',EM:'em',U:'u',S:'s',STRIKE:'s',DEL:'s',SUB:'sub',SUP:'sup'};
+  if (tags[element.tagName]) wrappers.push([`<${tags[element.tagName]}>`, `</${tags[element.tagName]}>`]);
+  if (element.tagName === 'A') {
+    const url = safeURL(element.getAttribute('href'));
+    if (url !== null) wrappers.push([`<a href="${escapeHTML(url)}"${element.target === '_blank' ? ' target="_blank" rel="noopener noreferrer"' : ''}>`, '</a>']);
+  }
+  const style = styleOf(element);
+  if (style) wrappers.push([`<span style="${escapeHTML(style)}">`, '</span>']);
+  return wrappers;
+}
+function linkText(text, inLink, autoLink) {
+  if (inLink || !autoLink) return escapeHTML(text);
+  const pattern = /https?:\/\/[^\s<>"'（）()【】\[\]{}「」『』]+|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+  let result = '', last = 0;
+  for (const match of text.matchAll(pattern)) {
+    result += escapeHTML(text.slice(last, match.index));
+    const value = match[0];
+    const mail = !/^https?:/i.test(value);
+    result += `<a href="${escapeHTML((mail ? 'mailto:' : '') + value)}"${mail ? '' : ' target="_blank" rel="noopener noreferrer"'}>${escapeHTML(value)}</a>`;
+    last = match.index + value.length;
+  }
+  return result + escapeHTML(text.slice(last));
+}
+// Parse HTML as an inert fragment; serialize only supported text formatting.
+function normalizeHTML(source, autoLink) {
+  const template = document.createElement('template');
+  template.innerHTML = source.replace(/\r\n?/g, '\n');
+  const lines = [''];
+  let explicitBreak = false;
+  function newline(explicit) { lines.push(''); explicitBreak = explicit; }
+  function walk(node, wrappers = [], inLink = false) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      // Ignore source-code indentation between block elements.
+      if (/^\s*\n\s*$/.test(node.data) && (blockTags.has(node.previousSibling?.nodeName) || blockTags.has(node.nextSibling?.nodeName))) return;
+      const text = node.previousSibling?.nodeName === 'BR' ? node.data.replace(/^\n/, '') : node.data;
+      text.split('\n').forEach((part, index) => {
+        if (index) newline(true);
+        if (!part) return;
+        lines[lines.length - 1] += wrappers.map(w => w[0]).join('') + linkText(part, inLink, autoLink) + [...wrappers].reverse().map(w => w[1]).join('');
+        explicitBreak = false;
+      });
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE || ignoredTags.has(node.tagName)) return;
+    if (node.tagName === 'BR') { newline(true); return; }
+    const block = blockTags.has(node.tagName);
+    if (block && lines[lines.length - 1]) newline(false);
+    const next = wrappers.concat(wrappersFor(node));
+    const linked = inLink || (node.tagName === 'A' && safeURL(node.getAttribute('href')) !== null);
+    const before = lines.length;
+    for (const child of node.childNodes) walk(child, next, linked);
+    if (block && (lines[lines.length - 1] || lines.length === before)) newline(false);
+  }
+  for (const node of template.content.childNodes) walk(node);
+  if (!explicitBreak && lines.length > 1 && !lines.at(-1)) lines.pop();
+  return lines.map(line => line ? `<span>${line}</span>` : '').join('<br>\n');
+}
+function setStatus(message) { $('status').textContent = message; }
+function switchMode(next) {
+  if (next === mode) return;
+  if (next === 'html') $('input').value = normalizeHTML($('editor').innerHTML, false);
+  else $('editor').innerHTML = normalizeHTML($('input').value, false).replace(/<br>\n/g, '<br>');
+  mode = next;
+  $('richPanel').hidden = mode !== 'rich'; $('htmlPanel').hidden = mode !== 'html';
+  $('richTab').setAttribute('aria-pressed', mode === 'rich'); $('htmlTab').setAttribute('aria-pressed', mode === 'html');
+  savedRange = null;
+}
+$('richTab').onclick = () => switchMode('rich'); $('htmlTab').onclick = () => switchMode('html');
+document.addEventListener('selectionchange', () => {
+  const selection = window.getSelection();
+  if (selection.rangeCount && $('editor').contains(selection.getRangeAt(0).commonAncestorContainer)) savedRange = selection.getRangeAt(0).cloneRange();
+});
+function restoreSelection() {
+  if (!savedRange || savedRange.collapsed || !$('editor').contains(savedRange.commonAncestorContainer)) { setStatus('先に、書式を変更する文字を選択してください。'); return false; }
+  $('editor').focus(); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(savedRange); return true;
+}
+for (const button of document.querySelectorAll('[data-command]')) {
+  button.onmousedown = event => event.preventDefault();
+  button.onclick = () => { if (restoreSelection()) { document.execCommand(button.dataset.command, false); setStatus('書式を変更しました。「整形する」で結果を更新してください。'); } };
+}
+$('sizeButton').onclick = () => {
+  const size = Number($('fontSize').value);
+  if (!Number.isFinite(size) || size < 8 || size > 96) { setStatus('文字サイズは8〜96pxで指定してください。'); return; }
+  if (!restoreSelection()) return;
+  // Modify selected text nodes independently so selections across paragraphs remain valid.
+  const range = window.getSelection().getRangeAt(0);
+  const walker = document.createTreeWalker($('editor'), NodeFilter.SHOW_TEXT);
+  const selected = []; let node;
+  while ((node = walker.nextNode())) if (range.intersectsNode(node)) selected.push(node);
+  for (const text of selected.reverse()) {
+    const start = text === range.startContainer ? range.startOffset : 0;
+    const end = text === range.endContainer ? range.endOffset : text.length;
+    if (start >= end) continue;
+    if (end < text.length) text.splitText(end);
+    const segment = start ? text.splitText(start) : text;
+    const span = document.createElement('span'); span.style.fontSize = `${size}px`;
+    segment.replaceWith(span); span.append(segment);
+  }
+  setStatus('文字サイズを変更しました。「整形する」で結果を更新してください。');
+};
+$('linkButton').onmousedown = event => event.preventDefault();
+$('linkButton').onclick = () => {
+  if (!restoreSelection()) return;
+  const value = prompt('リンク先URLを入力してください（https://…、mailto:…など）');
+  if (value === null) return;
+  const url = safeURL(value);
+  if (!url) { setStatus('有効なリンク先を入力してください。'); return; }
+  restoreSelection(); document.execCommand('createLink', false, url); setStatus('リンクを設定しました。');
+};
+$('editor').addEventListener('paste', event => {
+  event.preventDefault();
+  const html = event.clipboardData.getData('text/html');
+  const plain = event.clipboardData.getData('text/plain');
+  const safe = normalizeHTML(html || escapeHTML(plain), false).replace(/<br>\n/g, '<br>');
+  document.execCommand('insertHTML', false, safe);
+});
+$('editor').addEventListener('drop', event => event.preventDefault());
+function formatHTML() {
+  const source = mode === 'rich' ? $('editor').innerHTML : $('input').value;
+  const output = normalizeHTML(source, $('autoLink').checked);
+  $('output').value = output;
+  $('preview').innerHTML = output.replace(/<br>\n/g, '<br>');
+  setStatus(output ? '整形しました。プレビューとHTMLを確認してください。' : '文章を入力してください。');
+}
+$('formatButton').onclick = formatHTML;
+$('preview').addEventListener('click', event => { if (event.target.closest('a')) event.preventDefault(); });
+$('copyButton').onclick = async () => {
+  if (!$('output').value) { setStatus('先に文章を整形してください。'); return; }
+  try { await navigator.clipboard.writeText($('output').value); setStatus('HTMLをコピーしました。'); }
+  catch { $('output').focus(); $('output').select(); setStatus(document.execCommand('copy') ? 'HTMLをコピーしました。' : 'HTMLを選択しました。⌘C（WindowsはCtrl+C）でコピーしてください。'); }
+};
 </script>
-
 </body>
 </html>
