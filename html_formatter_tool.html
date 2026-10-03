@@ -52,7 +52,7 @@ textarea { resize: vertical; font: 14px/1.7 ui-monospace, monospace; } #editor {
 <label for="input" class="hint">HTMLまたはプレーンテキストを貼り付けてください。</label>
 <textarea id="input" placeholder='例：<p style="font-size: 20px"><strong>見出し</strong></p>' spellcheck="false"></textarea>
 </div>
-<p class="hint" style="margin: 10px 0">文字色・背景色にも対応。画像・表のレイアウト・外部CSSは引き継ぎません。</p>
+<p class="hint" style="margin: 10px 0">文字サイズ・太字・斜体・下線・取り消し線・文字色を保持します。背景色・フォントの種類・縦位置の指定は除外します。</p>
 <div class="row"><button type="button" class="primary" id="formatButton">整形する</button><label><input type="checkbox" id="autoLink" checked> URL・メールアドレスを自動リンク</label></div>
 <div id="status" role="status" aria-live="polite"></div>
 </section>
@@ -77,7 +77,8 @@ function safeURL(value) {
 function styleOf(element) {
   const style = element.style;
   const result = [];
-  for (const name of ['font-size','font-weight','font-style','text-decoration-line','color','background-color','font-family','vertical-align']) {
+  // Keep only supported text decoration; let the destination site control other styles.
+  for (const name of ['font-size','font-weight','font-style','text-decoration-line','color']) {
     const value = style.getPropertyValue(name);
     if (value && !/url\(|var\(|expression|[<>]/i.test(value)) result.push(`${name}: ${value}`);
   }
@@ -97,7 +98,7 @@ function styleOf(element) {
 function formattingFor(element, inherited) {
   const style = document.createElement('span').style;
   style.cssText = inherited;
-  const defaults = {B:['font-weight','bold'], STRONG:['font-weight','bold'], I:['font-style','italic'], EM:['font-style','italic'], SUB:['vertical-align','sub'], SUP:['vertical-align','super']};
+  const defaults = {B:['font-weight','bold'], STRONG:['font-weight','bold'], I:['font-style','italic'], EM:['font-style','italic']};
   const semantic = defaults[element.tagName];
   if (semantic) style.setProperty(...semantic);
   const decorations = new Set((style.textDecorationLine || '').split(' ').filter(value => value && value !== 'none'));
