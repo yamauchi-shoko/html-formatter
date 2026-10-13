@@ -19,7 +19,7 @@ button { cursor: pointer; } button:hover { background: #eef2fa; } button:focus-v
 textarea, #editor { width: 100%; min-height: 220px; padding: 14px; border: 1px solid #bbc6d6; border-radius: 6px; background: white; overflow-wrap: anywhere; }
 textarea { resize: vertical; font: 14px/1.7 ui-monospace, monospace; } #editor { font-size: 16px; white-space: pre-wrap; }
 #editor:empty:before { content: attr(data-placeholder); color: #758297; pointer-events: none; }
-.toolbar { margin-bottom: 10px; } #fontSize { width: 80px; } #preview { min-height: 100px; overflow-wrap: anywhere; white-space: pre-wrap; color: #000; }
+.toolbar { margin-bottom: 10px; } #fontSize { width: 80px; } #textColor { width: 52px; height: 40px; padding: 4px; } #preview { min-height: 100px; overflow-wrap: anywhere; white-space: pre-wrap; color: #000; }
 #status { min-height: 1.6em; margin-top: 12px; color: #31568b; } [hidden] { display: none !important; }
 @media (max-width: 600px) { main { margin: 20px auto; padding: 0 12px; } .card { padding: 16px; } h1 { font-size: 24px; } }
 </style>
@@ -35,10 +35,12 @@ textarea { resize: vertical; font: 14px/1.7 ui-monospace, monospace; } #editor {
 <button type="button" id="htmlTab" aria-pressed="false">HTMLを入力</button>
 </div>
 <div id="richPanel">
-<p class="hint">文章を貼り付けて、変更する文字を選択してください。貼り付け元の文字サイズ・太字・下線も引き継ぎます。</p>
+<p class="hint">文章を貼り付けて、変更する文字を選択してください。文字サイズや文字色を指定し、「サイズを適用」「色を適用」を押すと、選択した部分だけ変更できます。</p>
 <div class="toolbar" aria-label="文字の書式">
 <label for="fontSize">文字サイズ</label><input id="fontSize" type="number" min="8" max="96" value="16"><span>px</span>
 <button type="button" id="sizeButton">サイズを適用</button>
+<label for="textColor">文字色</label><input id="textColor" type="color" value="#000000">
+<button type="button" id="colorButton">色を適用</button>
 <button type="button" data-command="bold"><b>太字</b></button>
 <button type="button" data-command="italic"><i>斜体</i></button>
 <button type="button" data-command="underline"><u>下線</u></button>
@@ -182,10 +184,16 @@ function switchMode(next) {
   savedRange = null;
 }
 $('richTab').onclick = () => switchMode('rich'); $('htmlTab').onclick = () => switchMode('html');
-document.addEventListener('selectionchange', () => {
+function rememberSelection() {
   const selection = window.getSelection();
   if (selection.rangeCount && $('editor').contains(selection.getRangeAt(0).commonAncestorContainer)) savedRange = selection.getRangeAt(0).cloneRange();
+}
+document.addEventListener('selectionchange', () => {
+  // Controls may collapse the browser selection when they take focus.
+  if (document.activeElement === $('editor')) rememberSelection();
 });
+document.querySelector('.toolbar').addEventListener('pointerdown', rememberSelection);
+$('editor').addEventListener('blur', rememberSelection);
 function restoreSelection() {
   if (!savedRange || savedRange.collapsed || !$('editor').contains(savedRange.commonAncestorContainer)) { setStatus('先に、書式を変更する文字を選択してください。'); return false; }
   $('editor').focus(); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(savedRange); return true;
@@ -194,25 +202,44 @@ for (const button of document.querySelectorAll('[data-command]')) {
   button.onmousedown = event => event.preventDefault();
   button.onclick = () => { if (restoreSelection()) { document.execCommand(button.dataset.command, false); setStatus('書式を変更しました。「整形する」で結果を更新してください。'); } };
 }
-$('sizeButton').onclick = () => {
-  const size = Number($('fontSize').value);
-  if (!Number.isFinite(size) || size < 8 || size > 96) { setStatus('文字サイズは8〜96pxで指定してください。'); return; }
-  if (!restoreSelection()) return;
-  // Modify selected text nodes independently so selections across paragraphs remain valid.
+function applySelectedStyle(property, value) {
+  if (!restoreSelection()) return false;
   const range = window.getSelection().getRangeAt(0);
   const walker = document.createTreeWalker($('editor'), NodeFilter.SHOW_TEXT);
   const selected = []; let node;
-  while ((node = walker.nextNode())) if (range.intersectsNode(node)) selected.push(node);
-  for (const text of selected.reverse()) {
-    const start = text === range.startContainer ? range.startOffset : 0;
-    const end = text === range.endContainer ? range.endOffset : text.length;
-    if (start >= end) continue;
-    if (end < text.length) text.splitText(end);
-    const segment = start ? text.splitText(start) : text;
-    const span = document.createElement('span'); span.style.fontSize = `${size}px`;
-    segment.replaceWith(span); span.append(segment);
+  // Snapshot all offsets before changing the DOM: live ranges move during edits.
+  while ((node = walker.nextNode())) {
+    if (!range.intersectsNode(node)) continue;
+    const start = node === range.startContainer ? range.startOffset : 0;
+    const end = node === range.endContainer ? range.endOffset : node.length;
+    if (start < end) selected.push({node, start, end});
   }
-  setStatus('文字サイズを変更しました。「整形する」で結果を更新してください。');
+  if (!selected.length) { setStatus('書式を変更する文字を選択してください。'); return false; }
+  for (const item of [...selected].reverse()) {
+    const {node, start, end} = item;
+    if (end < node.length) node.splitText(end);
+    const segment = start ? node.splitText(start) : node;
+    const span = document.createElement('span'); span.style.setProperty(property, value);
+    segment.replaceWith(span); span.append(segment);
+    item.segment = segment;
+  }
+  // Keep the exact text selected so size and color can be applied consecutively.
+  const updated = document.createRange();
+  updated.setStart(selected[0].segment, 0);
+  const last = selected[selected.length - 1].segment;
+  updated.setEnd(last, last.length);
+  const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(updated);
+  savedRange = updated.cloneRange();
+  return true;
+}
+for (const id of ['sizeButton', 'colorButton']) $(id).onmousedown = event => event.preventDefault();
+$('sizeButton').onclick = () => {
+  const size = Number($('fontSize').value);
+  if (!Number.isFinite(size) || size < 8 || size > 96) { setStatus('文字サイズは8〜96pxで指定してください。'); return; }
+  if (applySelectedStyle('font-size', `${size}px`)) setStatus('選択した文字のサイズを変更しました。「整形する」で結果を更新してください。');
+};
+$('colorButton').onclick = () => {
+  if (applySelectedStyle('color', $('textColor').value)) setStatus('選択した文字の色を変更しました。「整形する」で結果を更新してください。');
 };
 $('linkButton').onmousedown = event => event.preventDefault();
 $('linkButton').onclick = () => {
